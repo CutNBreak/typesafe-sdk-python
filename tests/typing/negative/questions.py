@@ -9,5 +9,6 @@ missing_choice_criteria: ChoiceModel = {"type": "choice"}  # E: Missing required
 missing_score_criteria: ScoreModel = {"type": "score"}  # E: Missing required key `criteria`
 bad_extra: NoulModel = {"type": "noul", "extra": object()}  # E: is not assignable
 bad_criteria: ChoiceModel = {"type": "choice", "criteria": ["a"]}  # E: is not assignable
+bad_score_criteria: ScoreModel = {"type": "score", "criteria": {0: "a"}}  # E: is not assignable
 bad_question: Question = {"unrelated": "value"}  # E: is not assignable
 bad_question_type: Question = {"type": 123}  # E: is not assignable

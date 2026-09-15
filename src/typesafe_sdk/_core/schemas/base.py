@@ -5,7 +5,6 @@ from functools import cached_property
 
 import httpx2
 import msgspec
-from msgspec.structs import force_setattr
 from typing_extensions import Self
 
 from typesafe_sdk._core.constants import REQUEST_ID_HEADER
@@ -30,22 +29,40 @@ def field_path(prefix: tuple[str, ...], error: msgspec.DecodeError) -> str:
     at = _ERROR_AT.search(message)
     if at is not None:
         segments = [segment for segment in at.group("path").split(".") if segment]
-    elif (missing := _ERROR_MISSING.search(message)) is not None:
-        segments = [missing.group("field")]
+    if (missing := _ERROR_MISSING.search(message)) is not None:
+        segments.append(missing.group("field"))
     return ".".join((*prefix, *segments))
+
+
+def _request_endpoint(response: httpx2.Response) -> str | None:
+    """Describe the endpoint if the response has an originating request."""
+    try:
+        request = response.request
+    except RuntimeError:
+        return None
+    return f"{request.method} {request.url.copy_with(userinfo=b'', query=None, fragment=None)}"
 
 
 def validation_error(response: httpx2.Response, path: str) -> TypeSafeAPIResponseValidationError:
     """Build a `TypeSafeAPIResponseValidationError` locating a bad field in `response`."""
-    return TypeSafeAPIResponseValidationError(response.status_code, deserialize(response.content), response.headers, path)
+    return TypeSafeAPIResponseValidationError(
+        response.status_code, deserialize(response.content), response.headers, path, _request_endpoint(response)
+    )
 
 
 # dict=True gives the struct a __dict__ so subclasses can memoize derived views with cached_property.
 class Response(Schema, frozen=True, kw_only=True, dict=True):
     """A response object that also exposes the originating HTTP response via ``raw_http_response`` and ``request_id``."""
 
-    _request_id: str | None = None
-    _raw: httpx2.Response | None = None
+    def __copy__(self) -> Self:
+        """Copy response fields and runtime metadata."""
+        result = msgspec.structs.replace(self)
+        result.__dict__.update(self.__dict__)
+        return result
+
+    def __reduce__(self) -> tuple[object, ...]:
+        """Preserve runtime metadata during deep copies and pickling."""
+        return (*super().__reduce__(), self.__dict__)
 
     @classmethod
     def from_http_response(cls, response: httpx2.Response) -> Self:
@@ -55,13 +72,14 @@ class Response(Schema, frozen=True, kw_only=True, dict=True):
         match the schema raises a `TypeSafeAPIResponseValidationError`.
         """
         if not response.is_success:
-            raise api_error(response.status_code, deserialize(response.content), response.headers)
+            raise api_error(response.status_code, deserialize(response.content), response.headers, _request_endpoint(response))
         try:
             result = cls._decode(response)
         except msgspec.DecodeError as error:
             raise validation_error(response, field_path((), error)) from error
-        force_setattr(result, "_request_id", response.headers.get(REQUEST_ID_HEADER))
-        force_setattr(result, "_raw", response)
+        # Transport metadata is runtime state, not part of the serializable response schema.
+        result.__dict__["_request_id"] = response.headers.get(REQUEST_ID_HEADER)
+        result.__dict__["_raw"] = response
         return result
 
     @classmethod
@@ -72,13 +90,15 @@ class Response(Schema, frozen=True, kw_only=True, dict=True):
     @cached_property
     def request_id(self) -> str:
         """The ``x-typesafe-request-id`` response header."""
-        if self._request_id is None:
+        request_id: str | None = self.__dict__.get("_request_id")
+        if request_id is None:
             raise TypeSafeError("The response did not include a request ID.")
-        return self._request_id
+        return request_id
 
     @property
     def raw_http_response(self) -> httpx2.Response:
         """The underlying `httpx2.Response`, exposing status, headers, and body."""
-        if self._raw is None:
+        response: httpx2.Response | None = self.__dict__.get("_raw")
+        if response is None:
             raise TypeSafeError("The response was not created from a raw HTTP response.")
-        return self._raw
+        return response

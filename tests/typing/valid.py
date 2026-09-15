@@ -1,14 +1,18 @@
 from collections.abc import Mapping
+from types import MappingProxyType
 
 import httpx2
 from typing_extensions import assert_type
 
-from typesafe_sdk import AsyncTypeSafeClient, Choice, ChoiceModel, ListModelsResponse, RetryPolicy, SystemOneResponse, TypeSafeClient
+from typesafe_sdk import AsyncTypeSafeClient, Choice, ChoiceModel, ListModelsResponse, RetryPolicy, Score, SystemOneResponse, TypeSafeClient
 
 
 def sync(client: TypeSafeClient) -> None:
     objects: dict[str, Choice] = {"q": Choice(instructions="?", criteria={"a": None})}
     data: dict[str, ChoiceModel] = {"q": {"type": "choice", "instructions": "?", "criteria": {"a": None}}}
+    # Abstract inputs: a MappingProxyType with a nested tuple as state, and tuple score criteria.
+    state = MappingProxyType({"items": ("a", None)})
+    assert_type(client.system_one(state, {"s": Score(criteria=("low", "high"))}), SystemOneResponse)
     assert_type(client.system_one({"nullable": None}, objects, retry=RetryPolicy(), timeout=httpx2.Timeout(None)), SystemOneResponse)
     assert_type(client.system_one("x", data, model="test", extra_headers={"x-call": "test"}), SystemOneResponse)
     assert_type(

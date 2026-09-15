@@ -322,3 +322,49 @@ def test_atomic_push_rejects_concurrent_update(repos: tuple[Path, Path, Path], s
     assert result.returncode != 0
     assert git(remote, "tag", "--list") == "v42.0.0"
     assert git(remote, "rev-parse", "main") == git(competitor, "rev-parse", "HEAD")
+
+
+def test_release_contributors(repos: tuple[Path, Path, Path], signer: ModuleType) -> None:
+    source, destination, _ = repos
+    write(source, "src/feature.py", "# Alice's contribution\n")
+    git(source, "add", ".")
+    git(
+        source,
+        "-c",
+        "user.name=Alice",
+        "-c",
+        "user.email=alice@example.com",
+        "commit",
+        "-qm",
+        "Private implementation details\n\nCo-authored-by: Bob <bob@example.com>\nCo-authored-by: Bob <bob@example.com>",
+    )
+    git(source, "-c", "user.name=Bob", "-c", "user.email=bob@example.com", "commit", "--allow-empty", "-qm", "More private work")
+
+    assert signer.sync_public(source, destination, "v42.0.0", dry_run=False)
+    assert git(destination, "log", "-1", "--format=%B").splitlines() == [
+        "Release v42.0.0",
+        "",
+        "Co-authored-by: Alice <alice@example.com>",
+        "Co-authored-by: Bob <bob@example.com>",
+        "Co-authored-by: Test <test@example.com>",
+    ]
+    git(source, "tag", "v42.0.0")
+    set_version(source, "42.0.1")
+    git(source, "add", ".")
+    git(
+        source,
+        "-c",
+        "user.name=Carol",
+        "-c",
+        "user.email=carol@example.com",
+        "commit",
+        "-qm",
+        "Next release\n\nCo-authored-by: Alice <alice@example.com>",
+    )
+    assert signer.sync_public(source, destination, "v42.0.1", dry_run=False)
+    assert git(destination, "log", "-1", "--format=%B").splitlines() == [
+        "Release v42.0.1",
+        "",
+        "Co-authored-by: Alice <alice@example.com>",
+        "Co-authored-by: Carol <carol@example.com>",
+    ]

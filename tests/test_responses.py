@@ -1,3 +1,5 @@
+import copy
+import pickle
 from typing import Any, cast
 
 import httpx2
@@ -10,7 +12,9 @@ from tests.helpers import system_one
 from tests.test_clients import RESULT
 from typesafe_sdk import (
     Answer,
+    AsyncTypeSafeClient,
     ChoiceAnswer,
+    ListModelsResponse,
     NoulAnswer,
     ScoreAnswer,
     SystemOneResponse,
@@ -46,6 +50,19 @@ async def test_malformed_response_raises_validation_error(clients: ClientFactory
     assert caught.value.status == 200
     assert caught.value.request_id == "req-123"
     assert caught.value.body == body
+    assert str(caught.value) == (
+        f"POST https://api.typesafe.ai/v1/systemone: 200 Invalid response data at {field_path!r}. (request_id=req-123)"
+    )
+
+
+@pytest.mark.parametrize("missing", ["name", "description", "release_date"])
+def test_nested_missing_field_path(missing: str) -> None:
+    model = {"name": "test", "description": "Test model", "release_date": "2026-09-14"}
+    body = {"models": [model, {name: value for name, value in model.items() if name != missing}]}
+    with pytest.raises(TypeSafeAPIResponseValidationError) as caught:
+        ListModelsResponse.from_http_response(httpx2.Response(200, json=body))
+    assert caught.value.field_path == f"models[1].{missing}"
+    assert str(caught.value) == f"200 Invalid response data at 'models[1].{missing}'."
 
 
 async def test_response_carries_request_id(clients: ClientFactory) -> None:
@@ -66,6 +83,39 @@ async def test_response_carries_raw_http_response(clients: ClientFactory) -> Non
     assert result.raw_http_response.status_code == 200
     assert result.raw_http_response.headers["x-typesafe-request-id"] == "req-42"
     assert result.raw_http_response.json() == RESULT
+
+
+@pytest.mark.parametrize("resource", ["models", "system_one"])
+async def test_response_serialization_excludes_http_metadata(clients: ClientFactory, resource: str) -> None:
+    body = {"models": [{"name": "test", "description": "Test model", "release_date": "2026-09-14"}]} if resource == "models" else RESULT
+    client = clients(lambda request: httpx2.Response(200, json=body, headers={"x-typesafe-request-id": "req-export"}))
+    if resource == "models":
+        result = await client.models.list() if isinstance(client, AsyncTypeSafeClient) else client.models.list()
+    else:
+        result = await system_one(client, state="text", questions={"q": {"type": "noul", "instructions": "?"}})
+    # Populating derived views must not add them to the serialized API payload.
+    if isinstance(result, SystemOneResponse):
+        assert result.choices
+        assert result.scores
+    assert result.request_id == "req-export"
+    assert set(msgspec.to_builtins(result)) == set(body)
+    encoded = msgspec.json.encode(result)
+    assert msgspec.json.decode(encoded) == body
+    restored = msgspec.json.decode(encoded, type=type(result))
+    assert restored == result
+    assert result.raw_http_response.json() == body
+
+
+def test_copied_response_preserves_metadata() -> None:
+    result = SystemOneResponse.from_http_response(httpx2.Response(200, json=RESULT, headers={"x-typesafe-request-id": "req-copy"}))
+    assert result.scores
+    unpickled = pickle.loads(pickle.dumps(result))  # noqa: S301 - Round-tripping an object created in this test.
+    for restored in (copy.copy(result), copy.deepcopy(result), unpickled):
+        assert restored is not result
+        assert restored == result
+        assert restored.request_id == "req-copy"
+        assert restored.raw_http_response.json() == RESULT
+        assert restored.scores["quality"] is restored.answers["quality"]
 
 
 def test_missing_raw_raises_on_access() -> None:
@@ -189,6 +239,9 @@ def test_answer_fields_are_frozen_and_slotted(answer: Answer) -> None:
     assert not hasattr(answer, "__dict__")
     with pytest.raises(AttributeError):
         cast(Any, answer).type = "other"
+    for name in answer.__struct_fields__:
+        with pytest.raises(AttributeError):
+            setattr(answer, name, getattr(answer, name))
 
 
 @pytest.mark.parametrize("group", ["nouls", "choices", "scores"])

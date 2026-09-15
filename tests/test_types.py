@@ -1,3 +1,5 @@
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import get_args, get_origin, get_type_hints
 
 import httpx2
@@ -16,11 +18,11 @@ def test_json_value_and_state_exclude_top_level_none() -> None:
         assert type(None) not in get_args(state_type)
         text_type, object_type, array_type = get_args(state_type)
         assert text_type is str
-        assert get_origin(object_type) is dict
+        assert get_origin(object_type) is Mapping
         key_type, value_type = get_args(object_type)
         assert key_type is str
         assert type(None) in get_args(value_type)
-        assert get_origin(array_type) is list
+        assert get_origin(array_type) is Sequence
         assert type(None) in get_args(get_args(array_type)[0])
 
 
@@ -34,13 +36,13 @@ async def test_array_inputs(clients: ClientFactory, raw: bool) -> None:
         questions = {
             "yes": {"type": "noul", "instructions": instructions, "criteria": {"true": description, "false": None}},
             "label": {"type": "choice", "instructions": instructions, "criteria": {"a": description, "b": None}},
-            "rating": {"type": "score", "instructions": instructions, "criteria": {0: description}},
+            "rating": {"type": "score", "instructions": instructions, "criteria": [description]},
         }
     else:
         questions = {
             "yes": Noul(instructions=instructions, criteria={"true": description, "false": None}),
             "label": Choice(instructions=instructions, criteria={"a": description, "b": None}),
-            "rating": Score(instructions=instructions, criteria={0: description}),
+            "rating": Score(instructions=instructions, criteria=[description]),
         }
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -94,3 +96,28 @@ async def test_explicitly_nullable_json_values(clients: ClientFactory) -> None:
         await client.system_one(state, questions)
     else:
         client.system_one(state, questions)
+
+
+async def test_abstract_input_containers_encode(clients: ClientFactory) -> None:
+    # Inputs are typed as Mapping/Sequence at every level: a MappingProxyType with a nested tuple, and
+    # tuple criteria, must type-check and encode like dict/list.
+    state = MappingProxyType({"items": ("a", None)})
+    questions: Questions = {
+        "label": Choice(instructions=("read", {"ctx": None}), criteria=MappingProxyType({"a": None, "b": "x"})),
+        "rating": Score(criteria=("low", "high")),
+        "raw": {"type": "score", "criteria": ("bad", "good")},
+    }
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        assert msgspec.json.decode(request.content) == {
+            "state": {"items": ["a", None]},
+            "model": "jev-latest",
+            "questions": {
+                "label": {"type": "choice", "instructions": ["read", {"ctx": None}], "criteria": {"a": None, "b": "x"}},
+                "rating": {"type": "score", "criteria": ["low", "high"]},
+                "raw": {"type": "score", "criteria": ["bad", "good"]},
+            },
+        }
+        return httpx2.Response(200, json={"model": "jev-latest", "usage": {}, "answers": {}})
+
+    await system_one(clients(handler), state=state, questions=questions, model="jev-latest")

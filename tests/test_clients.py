@@ -56,16 +56,9 @@ RESULT = {
 CARD = {"name": "jev-latest", "description": "Fast model", "release_date": "2026-08-01"}
 
 
-@pytest.mark.parametrize("score_map", [False, True])
 @pytest.mark.parametrize("question_form", ["dataclass", "raw", "mixed"])
-async def test_round_trip(clients: ClientFactory, score_map: bool, question_form: str) -> None:
-    criteria: (
-        dict[int, str | dict[str, JSONValue | None] | list[JSONValue | None]] | list[str | dict[str, JSONValue | None] | list[JSONValue | None]]
-    )
-    if score_map:
-        criteria = {2: "great", 0: "bad", 1: "ok"}
-    else:
-        criteria = ["bad", "ok", "great"]
+async def test_round_trip(clients: ClientFactory, question_form: str) -> None:
+    criteria: list[str | dict[str, JSONValue | None] | list[JSONValue | None]] = ["bad", "ok", "great"]
     raw: dict[str, QuestionModel] = {
         "spam": {"type": "noul", "instructions": "Spam?"},
         "tone": {"type": "choice", "instructions": "Tone?", "criteria": {"friendly": None, "hostile": None}},
@@ -275,10 +268,6 @@ async def test_invalid_models_response(clients: ClientFactory, body: object) -> 
     [
         ({}, "At least one question"),
         ({"rating": Score(instructions="?", criteria=[])}, '"rating" has no criteria'),
-        ({"rating": Score(instructions="?", criteria={})}, '"rating" has no criteria'),
-        ({"rating": Score(instructions="?", criteria={0: "bad", 2: "good"})}, '"rating".*no gaps'),
-        ({"rating": Score(instructions="?", criteria={1: "bad"})}, '"rating".*no gaps'),
-        ({"rating": Score(instructions="?", criteria={-1: "bad"})}, '"rating".*non-negative integers'),
     ],
 )
 async def test_validation_before_network(clients: ClientFactory, questions: Any, match: str) -> None:
@@ -315,7 +304,7 @@ async def test_error_mapping(clients: ClientFactory, status: int, error: type[Ty
     assert caught.value.status == status
     assert caught.value.body == body
     assert caught.value.request_id == "req_123"
-    assert str(caught.value) == f"{status} Server explanation"
+    assert str(caught.value) == f"GET https://api.typesafe.ai/v1/models: {status} Server explanation (request_id=req_123)"
     assert caught.value.headers["retry-after-ms"] == "125"
     if isinstance(caught.value, TypeSafeRateLimitError):
         assert caught.value.retry_after_ms == 125
@@ -341,7 +330,7 @@ async def test_error_messages(clients: ClientFactory, body: object, message: str
     content = body.encode() if isinstance(body, str) else msgspec.json.encode(body)
     with pytest.raises(TypeSafeAPIError, match="400") as caught:
         await models(clients(lambda request: httpx2.Response(400, content=content)))
-    assert str(caught.value) == f"400 {message}"
+    assert str(caught.value) == f"GET https://api.typesafe.ai/v1/models: 400 {message}"
 
 
 @pytest.mark.parametrize(

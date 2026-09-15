@@ -1,53 +1,63 @@
 """Question objects and raw input models."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal, TypeAlias
 
 from typing_extensions import NotRequired, TypedDict
 
-from typesafe_sdk._core.json_types import JSONValue
+from typesafe_sdk._core.json_types import JSONContent, JSONValue
 from typesafe_sdk._schemas import models as wire
 
 
 class NoulCriteria(TypedDict, total=False, extra_items=JSONValue | None):
-    """Optional descriptions of the yes and no outcomes."""
+    """Optional descriptions of the yes and no outcomes.
 
-    true: str | dict[str, JSONValue | None] | list[JSONValue | None] | None
+    See the [noul primitive](https://docs.typesafe.ai/primitives/noul) for details.
+    """
+
+    true: JSONContent | None
     """Description of the yes outcome as text, a JSON object, or an array; `None` leaves it undescribed."""
-    false: str | dict[str, JSONValue | None] | list[JSONValue | None] | None
+    false: JSONContent | None
     """Description of the no outcome as text, a JSON object, or an array; `None` leaves it undescribed."""
 
 
 class NoulModel(TypedDict, extra_items=JSONValue | None):
-    """A yes/no question dictionary with `type="noul"`, allowing extra JSON fields."""
+    """A yes/no question dictionary with `type="noul"`, allowing extra JSON fields.
+
+    See the [noul primitive](https://docs.typesafe.ai/primitives/noul) for details.
+    """
 
     type: Literal["noul"]
-    instructions: NotRequired[str | dict[str, JSONValue | None] | list[JSONValue | None] | None]
+    instructions: NotRequired[JSONContent | None]
     """The question to ask, expressed as text, a JSON object, or an array; optional."""
     criteria: NotRequired[NoulCriteria | None]
     """Optional descriptions of the yes and no outcomes."""
 
 
 class ChoiceModel(TypedDict, extra_items=JSONValue | None):
-    """A choice question dictionary with `type="choice"`, allowing extra JSON fields."""
+    """A choice question dictionary with `type="choice"`, allowing extra JSON fields.
+
+    See the [choice primitive](https://docs.typesafe.ai/primitives/choice) for details.
+    """
 
     type: Literal["choice"]
-    instructions: NotRequired[str | dict[str, JSONValue | None] | list[JSONValue | None] | None]
+    instructions: NotRequired[JSONContent | None]
     """The question to ask, expressed as text, a JSON object, or an array; optional."""
-    criteria: dict[str, str | dict[str, JSONValue | None] | list[JSONValue | None] | None]
+    criteria: Mapping[str, JSONContent | None]
     """Labels mapped to text, object, or array descriptions, or `None` for undescribed labels."""
 
 
 class ScoreModel(TypedDict, extra_items=JSONValue | None):
-    """A score question dictionary with `type="score"`, allowing extra JSON fields."""
+    """A score question dictionary with `type="score"`, allowing extra JSON fields.
+
+    See the [score primitive](https://docs.typesafe.ai/primitives/score) for details.
+    """
 
     type: Literal["score"]
-    instructions: NotRequired[str | dict[str, JSONValue | None] | list[JSONValue | None] | None]
+    instructions: NotRequired[JSONContent | None]
     """The question to ask, expressed as text, a JSON object, or an array; optional."""
-    criteria: (
-        list[str | dict[str, JSONValue | None] | list[JSONValue | None]] | dict[int, str | dict[str, JSONValue | None] | list[JSONValue | None]]
-    )
-    """Nonempty text, object, or array descriptions indexed from zero, with no gaps in dictionary keys."""
+    criteria: Sequence[JSONContent]
+    """A nonempty, ordered list of text, object, or array descriptions, one per score from zero."""
 
 
 class Noul(wire.NoulQuestion, kw_only=True, omit_defaults=True):
@@ -56,7 +66,7 @@ class Noul(wire.NoulQuestion, kw_only=True, omit_defaults=True):
     See the [noul primitive](https://docs.typesafe.ai/primitives/noul) for details.
     """
 
-    instructions: str | dict[str, JSONValue | None] | list[JSONValue | None] | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
+    instructions: JSONContent | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
     """The question to ask, expressed as text, a JSON object, or an array; optional."""
     criteria: NoulCriteria | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
     """Optional descriptions of the yes and no outcomes."""
@@ -68,9 +78,9 @@ class Choice(wire.ChoiceQuestion, kw_only=True, omit_defaults=True):
     See the [choice primitive](https://docs.typesafe.ai/primitives/choice) for details.
     """
 
-    criteria: dict[str, str | dict[str, JSONValue | None] | list[JSONValue | None] | None]
+    criteria: Mapping[str, JSONContent | None]  # pyrefly: ignore[bad-override-mutable-attribute]
     """Labels mapped to text, object, or array descriptions, or `None` for undescribed labels."""
-    instructions: str | dict[str, JSONValue | None] | list[JSONValue | None] | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
+    instructions: JSONContent | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
     """The question to ask, expressed as text, a JSON object, or an array; optional."""
 
 
@@ -80,11 +90,9 @@ class Score(wire.ScoreQuestion, kw_only=True, omit_defaults=True):
     See the [score primitive](https://docs.typesafe.ai/primitives/score) for details.
     """
 
-    criteria: (  # pyrefly: ignore[bad-override-mutable-attribute]
-        list[str | dict[str, JSONValue | None] | list[JSONValue | None]] | dict[int, str | dict[str, JSONValue | None] | list[JSONValue | None]]
-    )
-    """Nonempty text, object, or array descriptions indexed from zero, with no gaps in dictionary keys."""
-    instructions: str | dict[str, JSONValue | None] | list[JSONValue | None] | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
+    criteria: Sequence[JSONContent]  # pyrefly: ignore[bad-override-mutable-attribute]
+    """A nonempty, ordered list of text, object, or array descriptions, one per score from zero."""
+    instructions: JSONContent | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
     """The question to ask, expressed as text, a JSON object, or an array; optional."""
 
 

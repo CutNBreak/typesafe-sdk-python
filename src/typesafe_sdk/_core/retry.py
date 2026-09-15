@@ -9,7 +9,7 @@ from tenacity import AsyncRetrying, RetryCallState, Retrying, retry_if_exception
 from tenacity.stop import stop_base
 
 from typesafe_sdk._core.config import resolve_timeout
-from typesafe_sdk._core.errors import TypeSafeAPIConnectionError, TypeSafeAPIError, TypeSafeAPITimeoutError, parse_retry_after
+from typesafe_sdk._core.errors import TypeSafeAPIConnectionError, TypeSafeAPIError, TypeSafeAPITimeoutError, TypeSafeError, parse_retry_after
 
 # `build_tenacity`/`build_tenacity_async` are internal build seams and stay out of the public docs.
 __all__ = ["RetryPolicy"]
@@ -25,9 +25,12 @@ def _retry_after(state: RetryCallState) -> float | None:
 
 
 def _backoff(attempt: int, initial: float, maximum: float, jitter: float) -> float:
-    exponent = min(attempt - 1, math.ceil(math.log2(maximum / initial)))
-    exponential = min(initial * 2**exponent, maximum)
-    return math.floor(exponential * (1 - random.random() * jitter) * 1000 + 0.5) / 1000  # noqa: S311 - Backoff jitter, not cryptography.
+    if initial == 0 or maximum == 0:
+        return 0.0
+    exponent = attempt - 1
+    exponential = maximum if exponent >= math.log2(maximum) - math.log2(initial) else math.ldexp(initial, exponent)
+    delay = exponential * (1 - random.random() * jitter)  # noqa: S311 - Backoff jitter, not cryptography.
+    return min(exponential, round(delay, 3))
 
 
 @dataclass(frozen=True)
@@ -50,10 +53,10 @@ class RetryPolicy:
     """Maximum retries after the initial attempt; `0` disables retries."""
 
     backoff_initial: float = 0.5
-    """First backoff delay in seconds, doubled each attempt up to `backoff_max`."""
+    """First backoff delay in seconds, doubled each attempt up to `backoff_max`; zero disables backoff."""
 
     backoff_max: float = 5.0
-    """Maximum backoff delay in seconds."""
+    """Maximum backoff delay in seconds; zero disables backoff."""
 
     backoff_jitter: float = 0.25
     """Fraction of each backoff delay randomly subtracted, between 0 and 1."""
@@ -83,7 +86,14 @@ class RetryPolicy:
     """
 
     def __post_init__(self) -> None:
-        """Validate the optional retry timeout."""
+        """Validate retry counts, delays, jitter, and the optional retry timeout."""
+        if not isinstance(self.max_retries, int) or self.max_retries < 0:
+            raise TypeSafeError("max_retries must be a non-negative integer.")
+        for name, value in (("backoff_initial", self.backoff_initial), ("backoff_max", self.backoff_max)):
+            if not math.isfinite(value) or value < 0:
+                raise TypeSafeError(f"{name} must be a non-negative, finite number of seconds.")
+        if not 0 <= self.backoff_jitter <= 1:
+            raise TypeSafeError("backoff_jitter must be between zero and one.")
         if self.timeout is not None:
             resolve_timeout(self.timeout)
 

@@ -26,25 +26,20 @@ from typesafe_sdk._core.questions import normalize_questions
 from typesafe_sdk._schemas import models as wire
 
 
-def test_normalization_preserves_objects_except_score_maps() -> None:
+def test_normalization_preserves_objects() -> None:
     questions = {
         "noul": Noul(instructions="Spam?"),
         "choice": Choice(instructions="Tone?", criteria={"calm": None}),
-        "score": Score(instructions="Quality?", criteria={1: "good", 0: "bad"}),
-        "list_score": Score(criteria=["bad", "good"]),
+        "score": Score(instructions="Quality?", criteria=["bad", "good"]),
     }
     result = normalize_questions(questions)
     assert result["noul"] is questions["noul"]
     assert result["choice"] is questions["choice"]
-    assert result["list_score"] is questions["list_score"]
-    assert result["score"] is not questions["score"]
-    assert isinstance(result["score"], Score)
-    assert questions["score"].criteria == {1: "good", 0: "bad"}
+    assert result["score"] is questions["score"]
     assert msgspec.json.decode(msgspec.json.encode(result)) == {
         "noul": {"type": "noul", "instructions": "Spam?"},
         "choice": {"type": "choice", "instructions": "Tone?", "criteria": {"calm": None}},
         "score": {"type": "score", "instructions": "Quality?", "criteria": ["bad", "good"]},
-        "list_score": {"type": "score", "criteria": ["bad", "good"]},
     }
 
 
@@ -53,7 +48,6 @@ def test_normalization_preserves_objects_except_score_maps() -> None:
     [
         {"type": "noul", "instructions": "Spam?", "weight": 3, "criteria": {"future": "kept"}},
         {"type": "future", "nested": {"k": None}},
-        {"type": "score", "criteria": {0: "good"}, "weight": 3},
         {"type": "score", "criteria": ["good"], "weight": 3},
     ],
 )
@@ -61,12 +55,10 @@ def test_normalization_preserves_raw_questions(raw: dict[str, Any]) -> None:
     before = copy.deepcopy(raw)
     questions = cast(Questions, {"raw": raw, "typed": Noul(instructions="Spam?")})
     result = normalize_questions(questions)
-    expected = {**raw, "criteria": ["good"]} if raw["type"] == "score" else raw
     assert isinstance(result["typed"], wire.NoulQuestion)
-    assert msgspec.to_builtins(result) == {"raw": expected, "typed": {"type": "noul", "instructions": "Spam?"}}
+    assert msgspec.to_builtins(result) == {"raw": raw, "typed": {"type": "noul", "instructions": "Spam?"}}
     assert raw == before
-    if not isinstance(raw.get("criteria"), dict) or raw["type"] != "score":
-        assert result["raw"] is raw
+    assert result["raw"] is raw
 
 
 @pytest.mark.parametrize(
@@ -102,16 +94,6 @@ def test_raw_questions_require_structural_keys(invalid: object) -> None:
 def test_direct_encoding_omits_only_default_fields(question: Noul | Choice | Score, expected: dict[str, Any]) -> None:
     assert msgspec.json.decode(msgspec.json.encode(question)) == expected
     assert msgspec.to_builtins(question) == expected
-
-
-def test_score_mutations_are_normalized_when_sending() -> None:
-    score = Score(criteria=["initial"])
-    score.criteria = {1: "good", 0: "bad"}
-    assert msgspec.to_builtins(normalize_questions({"q": score})) == {"q": {"type": "score", "criteria": ["bad", "good"]}}
-    assert score.criteria == {1: "good", 0: "bad"}
-    score.criteria[3] = "gap"
-    with pytest.raises(TypeSafeError, match="no gaps"):
-        normalize_questions({"q": score})
 
 
 def test_discriminators_are_automatic() -> None:
@@ -167,23 +149,20 @@ def test_optional_noul_criteria(raw: bool, criteria: NoulCriteria | None) -> Non
 
 
 @pytest.mark.parametrize("raw", [False, True])
-@pytest.mark.parametrize("criteria", [[], {}, {0: "bad", 2: "good"}, {-1: "bad"}, {False: "bad"}, {0: "bad", True: "good"}])
-def test_score_validation_preserves_inputs(raw: bool, criteria: list[str] | dict[int, str]) -> None:
-    model = cast(ScoreModel, {"type": "score", "instructions": "Quality?", "criteria": criteria})
+def test_empty_score_criteria_is_rejected(raw: bool) -> None:
+    model = cast(ScoreModel, {"type": "score", "instructions": "Quality?", "criteria": []})
     question = model if raw else Score(instructions=model["instructions"], criteria=model["criteria"])
-    before = copy.deepcopy(criteria)
-    with pytest.raises(TypeSafeError, match='"rating"'):
+    with pytest.raises(TypeSafeError, match='"rating" has no criteria'):
         normalize_questions({"rating": question})
-    assert criteria == before
 
 
 async def test_covariant_question_mappings(clients: ClientFactory) -> None:
     nouls = {"q": Noul(instructions="Spam?")}
     choices = {"q": Choice(instructions="Tone?", criteria={"calm": None})}
-    scores = {"q": Score(instructions="Quality?", criteria={0: "good"})}
+    scores = {"q": Score(instructions="Quality?", criteria=["good"])}
     raw_nouls: dict[str, NoulModel] = {"q": {"type": "noul", "instructions": "Spam?"}}
     raw_choices: dict[str, ChoiceModel] = {"q": {"type": "choice", "instructions": "Tone?", "criteria": {"calm": None}}}
-    raw_scores: dict[str, ScoreModel] = {"q": {"type": "score", "instructions": "Quality?", "criteria": {0: "good"}}}
+    raw_scores: dict[str, ScoreModel] = {"q": {"type": "score", "instructions": "Quality?", "criteria": ["good"]}}
     read_only: Mapping[str, Choice] = MappingProxyType(choices)
     mixed: Questions = {"one": nouls["q"], "two": raw_choices["q"], "three": scores["q"]}
     calls = 0
@@ -216,6 +195,6 @@ async def test_covariant_question_mappings(clients: ClientFactory) -> None:
         client.system_one("x", mixed)
         client.system_one("x", {"q": {"type": "choice", "instructions": "Tone?", "criteria": {"calm": None}}})
     assert calls == 9
-    assert scores["q"].criteria == {0: "good"}
-    assert raw_scores["q"]["criteria"] == {0: "good"}
+    assert scores["q"].criteria == ["good"]
+    assert raw_scores["q"]["criteria"] == ["good"]
     assert read_only["q"] is choices["q"]

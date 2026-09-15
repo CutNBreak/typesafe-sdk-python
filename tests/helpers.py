@@ -3,7 +3,7 @@ from collections.abc import Mapping
 import httpx2
 from typing_extensions import override
 
-from typesafe_sdk import AsyncTypeSafeClient, JSONValue, ModelMetadata, Questions, RetryPolicy, SystemOneResponse, TypeSafeClient
+from typesafe_sdk import AsyncTypeSafeClient, JSONContent, JSONValue, ModelMetadata, Questions, RetryPolicy, SystemOneResponse, TypeSafeClient
 
 
 class TrackingTransport(httpx2.MockTransport):
@@ -35,7 +35,7 @@ async def models(
 async def system_one(
     client: TypeSafeClient | AsyncTypeSafeClient,
     *,
-    state: str | dict[str, JSONValue | None] | list[JSONValue | None],
+    state: JSONContent,
     questions: Questions,
     model: str | None = None,
     extra_body: Mapping[str, JSONValue | None] | None = None,

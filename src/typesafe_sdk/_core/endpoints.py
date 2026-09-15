@@ -7,7 +7,7 @@ import httpx2
 
 from typesafe_sdk._core.config import Config
 from typesafe_sdk._core.constants import MODELS_PATH, SYSTEM_ONE_PATH
-from typesafe_sdk._core.json_types import JSONValue
+from typesafe_sdk._core.json_types import JSONContent, JSONValue
 from typesafe_sdk._core.question_types import Question
 from typesafe_sdk._core.questions import normalize_questions
 from typesafe_sdk._core.response_types import ListModelsResponse, SystemOneResponse
@@ -16,7 +16,7 @@ from typesafe_sdk._core.transport import Request, prepare
 
 def prepare_system_one(
     config: Config,
-    state: str | dict[str, JSONValue | None] | list[JSONValue | None],
+    state: JSONContent,
     questions: Mapping[str, Question],
     model: str | None,
     extra_body: Mapping[str, JSONValue | None] | None,

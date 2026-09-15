@@ -10,7 +10,7 @@ from typing_extensions import Self
 from typesafe_sdk._core.client.aio.models import AsyncModels
 from typesafe_sdk._core.config import Config
 from typesafe_sdk._core.endpoints import prepare_system_one
-from typesafe_sdk._core.json_types import JSONValue
+from typesafe_sdk._core.json_types import JSONContent, JSONValue
 from typesafe_sdk._core.question_types import Question
 from typesafe_sdk._core.response_types import SystemOneResponse
 from typesafe_sdk._core.retry import RetryPolicy, build_tenacity_async
@@ -105,7 +105,7 @@ class AsyncTypeSafeClient:
 
     async def system_one(
         self,
-        state: str | dict[str, JSONValue | None] | list[JSONValue | None],
+        state: JSONContent,
         questions: Mapping[str, Question],
         *,
         model: str | None = None,
@@ -116,8 +116,11 @@ class AsyncTypeSafeClient:
     ) -> SystemOneResponse:
         """Answer named questions about text or structured state.
 
+        See [System One](https://docs.typesafe.ai/concepts/system-one) for details.
+
         Args:
-            state: Text, a JSON object, or an array to evaluate; not `None`.
+            state: Text, a JSON object, or an array to evaluate.
+                See [state](https://docs.typesafe.ai/concepts/state) for details.
             questions: Nonempty mapping of names to question objects or raw dictionaries.
             model: Model override; `None` inherits the client default.
             retry: An optional retry policy to override the client-level value for this call only.
@@ -132,7 +135,7 @@ class AsyncTypeSafeClient:
             Answers keyed by question name, with model and token usage details.
 
         Raises:
-            TypeSafeError: Questions are empty or score criteria are empty or not indexed consecutively from zero.
+            TypeSafeError: Questions are empty or a score question's criteria list is empty.
             TypeSafeAPIError: The server returns an unsuccessful HTTP response after any retries.
             TypeSafeAPIConnectionError: The request cannot connect or times out after any retries.
 

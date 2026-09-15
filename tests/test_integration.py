@@ -27,7 +27,7 @@ async def test_live_questions(live_client: Client) -> None:
                 "criteria": {"true": {"meaning": "Payments or invoices", "examples": ["charged twice"]}},
             },
             "tone": Choice(instructions="What is the customer's tone?", criteria={"calm": None, "frustrated": None, "angry": None}),
-            "urgency": Score(instructions="How urgent is this ticket?", criteria={0: "can wait", 1: "this week", 2: "today"}),
+            "urgency": Score(instructions="How urgent is this ticket?", criteria=["can wait", "this week", "today"]),
         },
     )
     assert result.model

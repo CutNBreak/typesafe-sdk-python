@@ -7,6 +7,7 @@ from http import HTTPStatus
 from typing import Any
 
 import httpx2
+from typing_extensions import override
 
 from typesafe_sdk._core.constants import MAX_ERROR_BODY_LENGTH, REQUEST_ID_HEADER, RETRY_AFTER_HEADER, RETRY_AFTER_MS_HEADER
 from typesafe_sdk._core.json import serialize
@@ -28,7 +29,9 @@ def parse_retry_after(headers: httpx2.Headers) -> float | None:
         else:
             if math.isfinite(value):
                 if value >= 0:
-                    return value * multiplier
+                    delay = value * multiplier
+                    if math.isfinite(delay):
+                        return delay
                 elif name == RETRY_AFTER_HEADER:
                     return None
     return None
@@ -69,24 +72,42 @@ class TypeSafeError(Exception):
 class TypeSafeAPIError(TypeSafeError):
     """An unsuccessful HTTP response with its body and request metadata."""
 
-    def __init__(self, status: int, body: Any, headers: httpx2.Headers, message: str | None = None) -> None:
+    def __init__(self, status: int, body: Any, headers: httpx2.Headers, message: str | None = None, endpoint: str | None = None) -> None:
         """Describe an HTTP failure with an optional message override."""
+        super().__init__(status, body, headers, message, endpoint)
         self.status = status
         """HTTP response status code."""
         self.body = body
         """The server's JSON error body, plain response text, or `None` for an empty body."""
         self.headers = headers
         """HTTP response headers."""
+        self.endpoint = endpoint
+        """The request method and URL, without credentials, query parameters, or fragment, when available."""
         if message is None:
             detail = extract_message(body)
             if detail:
-                message = f"{status} {detail}"
+                message = detail
             elif body is None:
-                message = f"{status} status code (no body)"
+                message = "status code (no body)"
             else:
                 raw = body if isinstance(body, str) else serialize(body).decode()
-                message = f"{status} {raw[:MAX_ERROR_BODY_LENGTH] + '…' if len(raw) > MAX_ERROR_BODY_LENGTH else raw}"
-        super().__init__(message)
+                message = raw[:MAX_ERROR_BODY_LENGTH] + "…" if len(raw) > MAX_ERROR_BODY_LENGTH else raw
+        self._message = message
+
+    @override
+    def __str__(self) -> str:
+        """Return the status and error message with available request context."""
+        message = f"{self.status} {self._message}" if self._message else str(self.status)
+        if self.endpoint is not None:
+            message = f"{self.endpoint}: {message}"
+        if self.request_id is not None:
+            message += f" (request_id={self.request_id})"
+        return message
+
+    @override
+    def __repr__(self) -> str:
+        """Represent the error without including its response body and headers."""
+        return f"{type(self).__name__}({str(self)!r})"
 
     @property
     def request_id(self) -> str | None:
@@ -117,9 +138,9 @@ class TypeSafeUnprocessableEntityError(TypeSafeAPIError):
 class TypeSafeRateLimitError(TypeSafeAPIError):
     """The rate limit was exceeded (429)."""
 
-    def __init__(self, status: int, body: object, headers: httpx2.Headers, message: str | None = None) -> None:
+    def __init__(self, status: int, body: object, headers: httpx2.Headers, message: str | None = None, endpoint: str | None = None) -> None:
         """Describe a rate-limit response with an optional message override."""
-        super().__init__(status, body, headers, message)
+        super().__init__(status, body, headers, message, endpoint)
         self.retry_after_ms = parse_retry_after(headers)
         """The server's requested wait in milliseconds, or `None` if unavailable."""
 
@@ -137,19 +158,31 @@ class TypeSafeAPITimeoutError(TypeSafeAPIConnectionError, TimeoutError):
 
     def __init__(self, timeout: float | httpx2.Timeout) -> None:
         """Describe a request timeout with its configured timeout setting."""
+        super().__init__(timeout)
         self.timeout = timeout
         """The timeout setting used for the request, in seconds or as an `httpx2.Timeout`."""
-        super().__init__(f"Request timed out (timeout={timeout}).")
+
+    @override
+    def __str__(self) -> str:
+        """Return the formatted timeout message."""
+        return f"Request timed out (timeout={self.timeout})."
+
+    @override
+    def __repr__(self) -> str:
+        """Represent the error using its formatted message."""
+        return f"{type(self).__name__}({str(self)!r})"
 
 
 class TypeSafeAPIResponseValidationError(TypeSafeAPIError):
     """A successful HTTP response whose body was missing or structurally invalid required data."""
 
-    def __init__(self, status: int, body: Any, headers: httpx2.Headers, field_path: str) -> None:
+    def __init__(self, status: int, body: Any, headers: httpx2.Headers, field_path: str, endpoint: str | None = None) -> None:
         """Describe an unparseable response, naming the first missing or structurally invalid field."""
         self.field_path = field_path
         """Dotted path to the offending field, such as `answers.tone.confidence`."""
-        super().__init__(status, body, headers, f"Invalid response data at {field_path!r}.")
+        super().__init__(status, body, headers, f"Invalid response data at {field_path!r}.", endpoint)
+        # This constructor takes a field path as its fourth argument, not a message.
+        self.args = (status, body, headers, field_path, endpoint)
 
 
 STATUS_ERROR_TYPES: dict[int, type[TypeSafeAPIError]] = {
@@ -162,6 +195,6 @@ STATUS_ERROR_TYPES: dict[int, type[TypeSafeAPIError]] = {
 }
 
 
-def api_error(status: int, body: object, headers: httpx2.Headers) -> TypeSafeAPIError:
+def api_error(status: int, body: object, headers: httpx2.Headers, endpoint: str | None = None) -> TypeSafeAPIError:
     error_type = STATUS_ERROR_TYPES.get(status, TypeSafeInternalServerError if status >= HTTPStatus.INTERNAL_SERVER_ERROR else TypeSafeAPIError)
-    return error_type(status, body, headers)
+    return error_type(status, body, headers, endpoint=endpoint)

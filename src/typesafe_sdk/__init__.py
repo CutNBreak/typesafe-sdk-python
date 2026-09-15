@@ -20,7 +20,7 @@ from typesafe_sdk._core.errors import (
     TypeSafeRateLimitError,
     TypeSafeUnprocessableEntityError,
 )
-from typesafe_sdk._core.json_types import JSONValue
+from typesafe_sdk._core.json_types import JSONContent, JSONValue
 from typesafe_sdk._core.question_types import (
     Choice,
     ChoiceModel,
@@ -53,6 +53,7 @@ __all__ = [
     "Choice",
     "ChoiceAnswer",
     "ChoiceModel",
+    "JSONContent",
     "JSONValue",
     "ListModelsResponse",
     "ModelMetadata",

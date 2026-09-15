@@ -20,36 +20,46 @@ from typesafe_sdk._schemas import models as wire
 from typesafe_sdk._schemas.models import ModelMetadata
 
 
-class NoulAnswer(wire.NoulAnswer, kw_only=True):
-    """A yes/no answer."""
+# The generated wire fields are mutable; the public answer overrides intentionally make them read-only.
+class NoulAnswer(wire.NoulAnswer, frozen=True, kw_only=True):
+    """A yes/no answer.
 
-    noul: float
+    See the [noul primitive](https://docs.typesafe.ai/primitives/noul) for details.
+    """
+
+    noul: float  # pyrefly: ignore[bad-override]
     """Probability of a yes answer, from zero to one."""
 
 
-class ChoiceAnswer(wire.ChoiceAnswer, kw_only=True):
-    """A selected label and its probabilities."""
+class ChoiceAnswer(wire.ChoiceAnswer, frozen=True, kw_only=True):
+    """A selected label and its probabilities.
 
-    choice: str
+    See the [choice primitive](https://docs.typesafe.ai/primitives/choice) for details.
+    """
+
+    choice: str  # pyrefly: ignore[bad-override]
     """The selected label."""
-    confidence: float
+    confidence: float  # pyrefly: ignore[bad-override]
     """Reported confidence in the selected label."""
-    probabilities: dict[str, float]
+    probabilities: dict[str, float]  # pyrefly: ignore[bad-override]
     """Probabilities keyed by label."""
 
 
-class ScoreAnswer(wire.ScoreAnswer, kw_only=True):
-    """An expected score with its rubric and probabilities."""
+class ScoreAnswer(wire.ScoreAnswer, frozen=True, kw_only=True):
+    """An expected score with its rubric and probabilities.
 
-    score: float
+    See the [score primitive](https://docs.typesafe.ai/primitives/score) for details.
+    """
+
+    score: float  # pyrefly: ignore[bad-override]
     """Expected score, which may fall between the integer rubric levels."""
-    confidence: float
+    confidence: float  # pyrefly: ignore[bad-override]
     """Reported confidence in the score."""
     # JSON object keys are strings; `dict[int, ...]` tells msgspec to coerce them to the integer score
     # levels at decode time. `Any` (not the recursive `JSONValue`) keeps the nested values decodable.
-    legend: dict[int, str | dict[str, Any] | list[Any]]  # pyrefly: ignore[bad-override-mutable-attribute]
+    legend: dict[int, str | dict[str, Any] | list[Any]]  # pyrefly: ignore[bad-override]
     """Rubric descriptions keyed by integer score."""
-    probabilities: dict[int, float]  # pyrefly: ignore[bad-override-mutable-attribute]
+    probabilities: dict[int, float]  # pyrefly: ignore[bad-override]
     """Probabilities keyed by integer score."""
 
 
@@ -102,7 +112,10 @@ _RESPONSE_DECODER = msgspec.json.Decoder(_SystemOneBody)
 
 
 class SystemOneResponse(Response, frozen=True, kw_only=True):
-    """Answers grouped by question type with model and usage metadata."""
+    """Answers grouped by question type with model and usage metadata.
+
+    See [System One](https://docs.typesafe.ai/concepts/system-one) for details.
+    """
 
     model: str
     """The model used to answer the request."""

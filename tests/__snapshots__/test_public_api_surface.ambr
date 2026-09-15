@@ -42,6 +42,7 @@
     'Choice',
     'ChoiceAnswer',
     'ChoiceModel',
+    'JSONContent',
     'JSONValue',
     'ListModelsResponse',
     'ModelMetadata',

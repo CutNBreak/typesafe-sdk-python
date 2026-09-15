@@ -31,6 +31,45 @@ def test_retry_policy_invalid_timeout(timeout: float) -> None:
         RetryPolicy(timeout=timeout)
 
 
+@pytest.mark.parametrize("initial,maximum", [(0.0, 5.0), (0.5, 0.0), (0.0, 0.0)])
+@pytest.mark.parametrize("recover", [False, True])
+async def test_zero_backoff_retries(clients: ClientFactory, initial: float, maximum: float, recover: bool) -> None:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if recover and len(requests) == 2:
+            return httpx2.Response(200, json={"models": []})
+        return httpx2.Response(503, json={"message": "temporarily unavailable"})
+
+    client = clients(handler, retry=RetryPolicy(max_retries=1, backoff_initial=initial, backoff_max=maximum))
+    if recover:
+        assert await models(client) == ()
+    else:
+        with pytest.raises(TypeSafeAPIError, match="temporarily unavailable"):
+            await models(client)
+    assert [request.headers.get("x-typesafe-retry-count") for request in requests] == [None, "1"]
+
+
+@pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf")])
+@pytest.mark.parametrize("field", ["backoff_initial", "backoff_max"])
+def test_invalid_backoff(field: str, value: float) -> None:
+    with pytest.raises(TypeSafeError, match=field):
+        RetryPolicy(backoff_initial=value if field == "backoff_initial" else 0.5, backoff_max=value if field == "backoff_max" else 5.0)
+
+
+@pytest.mark.parametrize("jitter", [-0.1, 1.1, float("nan"), float("inf")])
+def test_invalid_backoff_jitter(jitter: float) -> None:
+    with pytest.raises(TypeSafeError, match="backoff_jitter"):
+        RetryPolicy(backoff_jitter=jitter)
+
+
+@pytest.mark.parametrize("retries", [-1, 0.5, float("nan"), float("inf")])
+def test_invalid_max_retries(retries: int) -> None:
+    with pytest.raises(TypeSafeError, match="max_retries"):
+        RetryPolicy(max_retries=retries)
+
+
 @pytest.mark.parametrize("resource", ["models", "system_one"])
 @pytest.mark.parametrize(
     "timeout,duration,delay,attempts",
@@ -204,6 +243,7 @@ async def test_server_delay_through_tenacity(clients: ClientFactory, headers: di
         ({"Retry-After": ""}, 0),
         ({"retry-after-ms": "inf"}, None),
         ({"retry-after-ms": "bad", "Retry-After": "2"}, 2000),
+        ({"Retry-After": "1e308"}, None),
     ],
 )
 def test_parse_retry_after(headers: dict[str, str], expected: float | None) -> None:
@@ -433,7 +473,7 @@ async def test_exhausted_retry_preserves_final_http_error(clients: ClientFactory
     assert caught.value.status == 503
     assert caught.value.body == {"message": "attempt 3"}
     assert caught.value.request_id == "request-3"
-    assert str(caught.value) == "503 attempt 3"
+    assert str(caught.value) == "POST https://api.typesafe.ai/v1/systemone: 503 attempt 3 (request_id=request-3)"
 
 
 async def test_cancel_pending_retry() -> None:
@@ -522,3 +562,15 @@ def test_retry_policy_wait_options(monkeypatch: pytest.MonkeyPatch) -> None:
     assert RetryPolicy()._wait(state) == 5.0
     assert RetryPolicy(respect_retry_after=False)._wait(state) == 0.5
     assert RetryPolicy(backoff_initial=0.2, respect_retry_after=False)._wait(state) == 0.2
+
+
+@pytest.mark.parametrize(
+    "initial,maximum,attempt,expected",
+    [(1e-300, 1e300, 1, 0.0), (1e-300, 1e300, 2000, 1e300), (1e308, 1e308, 1, 1e308), (0.5, 0.0006, 1, 0.0006)],
+)
+def test_backoff_extreme_values(monkeypatch: pytest.MonkeyPatch, initial: float, maximum: float, attempt: int, expected: float) -> None:
+    monkeypatch.setattr("random.random", lambda: 0.0)
+    policy = RetryPolicy(backoff_initial=initial, backoff_max=maximum)
+    state = RetryCallState(policy._build_tenacity(), None, (), {})
+    state.attempt_number = attempt
+    assert policy._wait(state) == expected
