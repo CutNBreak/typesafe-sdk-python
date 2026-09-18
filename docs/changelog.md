@@ -5,6 +5,20 @@ icon: lucide/history
 
 # Changelog
 
+## v0.7.0 (2026-09-18)
+
+### Breaking Changes
+
+- ser/de library has been changed from `msgspec` to `pydantic`
+
+### Bug fixes
+
+- `str` subclasses are now correctly serialized as strings instead of lists of characters
+
+### Features
+
+- the `system_one` method now accepts a new `response_model` argument that can be set to a desired `pydantic` model for additional _type-safety_
+
 ## v0.6.0 (2026-09-15)
 
 ### Breaking Changes

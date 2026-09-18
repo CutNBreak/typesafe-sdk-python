@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from functools import cached_property
 from types import TracebackType
+from typing import overload
 
 import httpx2
 from typing_extensions import Self
@@ -95,6 +96,7 @@ class TypeSafeClient:
         """
         return Models(self._config, self._http_client, self._retry)
 
+    @overload
     def system_one(
         self,
         state: JSONContent,
@@ -105,7 +107,35 @@ class TypeSafeClient:
         timeout: float | httpx2.Timeout | None = None,
         extra_headers: Mapping[str, str] | None = None,
         extra_body: Mapping[str, JSONValue | None] | None = None,
-    ) -> SystemOneResponse:
+        response_model: None = None,
+    ) -> SystemOneResponse: ...
+
+    @overload
+    def system_one(
+        self,
+        state: JSONContent,
+        questions: Mapping[str, Question],
+        *,
+        model: str | None = None,
+        retry: RetryPolicy | None = None,
+        timeout: float | httpx2.Timeout | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_body: Mapping[str, JSONValue | None] | None = None,
+        response_model: type[ResponseT],
+    ) -> ResponseT: ...
+
+    def system_one(
+        self,
+        state: JSONContent,
+        questions: Mapping[str, Question],
+        *,
+        model: str | None = None,
+        retry: RetryPolicy | None = None,
+        timeout: float | httpx2.Timeout | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_body: Mapping[str, JSONValue | None] | None = None,
+        response_model: type[ResponseT] | None = None,
+    ) -> SystemOneResponse | ResponseT:
         """Answer named questions about text or structured state.
 
         See [System One](https://docs.typesafe.ai/concepts/system-one) for details.
@@ -122,14 +152,18 @@ class TypeSafeClient:
                 `state`, `model`, and `questions` are set. Merging is last-write-wins: a key that
                 collides with `state`, `model`, or `questions` overrides it, and object values are
                 replaced rather than deep-merged.
+            response_model: Optional Pydantic `BaseModel` type describing the JSON response body,
+                including any nested answer models.
 
         Returns:
-            Answers keyed by question name, with model and token usage details.
+            An instance of `response_model`, or `SystemOneResponse` with answers keyed by question
+            name and model and token usage details when no custom model is supplied.
 
         Raises:
             TypeSafeError: Questions are empty or a score question's criteria list is empty.
             TypeSafeAPIError: The server returns an unsuccessful HTTP response after any retries.
             TypeSafeAPIConnectionError: The request cannot connect or times out after any retries.
+            TypeSafeAPIResponseValidationError: The response body does not match the response model.
 
         Examples:
             Create questions with named arguments:
@@ -169,7 +203,19 @@ class TypeSafeClient:
                 assert result.choices["tone"].choice in {"calm", "angry"}
             ```
         """
-        return self._request(prepare_system_one(self._config, state, questions, model, extra_body, timeout, extra_headers), retry=retry)
+        return self._request(
+            prepare_system_one(
+                self._config,
+                state,
+                questions,
+                model,
+                extra_body,
+                timeout,
+                extra_headers,
+                SystemOneResponse if response_model is None else response_model,
+            ),
+            retry=retry,
+        )
 
     def _request(self, request: Request[ResponseT], *, retry: RetryPolicy | None = None) -> ResponseT:
         return send(self._http_client, self._retry, request, retry)

@@ -10,8 +10,8 @@ from typesafe_sdk._core.constants import MODELS_PATH, SYSTEM_ONE_PATH
 from typesafe_sdk._core.json_types import JSONContent, JSONValue
 from typesafe_sdk._core.question_types import Question
 from typesafe_sdk._core.questions import normalize_questions
-from typesafe_sdk._core.response_types import ListModelsResponse, SystemOneResponse
-from typesafe_sdk._core.transport import Request, prepare
+from typesafe_sdk._core.response_types import ListModelsResponse
+from typesafe_sdk._core.transport import Request, ResponseT, prepare
 
 
 def prepare_system_one(
@@ -22,7 +22,8 @@ def prepare_system_one(
     extra_body: Mapping[str, JSONValue | None] | None,
     timeout: float | httpx2.Timeout | None,
     headers: Mapping[str, str] | None,
-) -> Request[SystemOneResponse]:
+    response_type: type[ResponseT],
+) -> Request[ResponseT]:
     body: dict[str, Any] = {
         "state": state,
         "model": config.default_model if model is None else model,
@@ -30,7 +31,7 @@ def prepare_system_one(
     }
     if extra_body is not None:
         body.update(extra_body)
-    return prepare(config, "POST", SYSTEM_ONE_PATH, body, timeout, headers, SystemOneResponse)
+    return prepare(config, "POST", SYSTEM_ONE_PATH, body, timeout, headers, response_type)
 
 
 def prepare_models(config: Config, timeout: float | httpx2.Timeout | None, headers: Mapping[str, str] | None) -> Request[ListModelsResponse]:
