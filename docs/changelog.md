@@ -5,6 +5,16 @@ icon: lucide/history
 
 # Changelog
 
+## v0.7.1 (2026-09-21)
+
+### Bug fixes
+
+- validate the API key early and exclude the value from logged exceptions
+
+### Documentation
+
+- add examples for usage with AI gateways
+
 ## v0.7.0 (2026-09-18)
 
 ### Breaking Changes

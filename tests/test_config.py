@@ -1,3 +1,5 @@
+import traceback
+
 import httpx2
 import pytest
 from pydantic_core import from_json
@@ -72,6 +74,40 @@ def test_missing_key(client_type: type[TypeSafeClient] | type[AsyncTypeSafeClien
         monkeypatch.setenv("TYPESAFE_API_KEY", key)
     with pytest.raises(TypeSafeError, match="TYPESAFE_API_KEY"):
         client_type()
+
+
+@pytest.mark.parametrize("source", ["env", "constructor"])
+@pytest.mark.parametrize("padding", ["", "\n", "\r\n", " \t\r\n "])
+async def test_api_key_whitespace(clients: ClientFactory, monkeypatch: pytest.MonkeyPatch, source: str, padding: str) -> None:
+    key = f"{padding}test-key{padding}"
+    monkeypatch.setenv("TYPESAFE_API_KEY", key if source == "env" else "env-key")
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        assert request.headers["authorization"] == "Bearer test-key"
+        return httpx2.Response(200, json={"models": []})
+
+    assert await models(clients(handler, api_key=None if source == "env" else key)) == ()
+
+
+@pytest.mark.parametrize("key", ["", " \t\r\n ", "\x00private", "private\x00"])
+async def test_invalid_explicit_key_does_not_fall_back_to_env(clients: ClientFactory, monkeypatch: pytest.MonkeyPatch, key: str) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "env-key")
+    with pytest.raises(TypeSafeError, match="API key"):
+        clients(lambda request: pytest.fail("Unexpected request"), api_key=key)
+
+
+@pytest.mark.parametrize("source", ["env", "constructor"])
+@pytest.mark.parametrize("character", ["\n", "\r", "\t", "\x1f", "\x7f", " ", "\u00e9", "\u200b"])
+async def test_invalid_api_key(clients: ClientFactory, monkeypatch: pytest.MonkeyPatch, source: str, character: str) -> None:
+    credential = "ts_live_private"
+    key = f"{credential}{character}suffix"
+    monkeypatch.setenv("TYPESAFE_API_KEY", key if source == "env" else "env-key")
+    with pytest.raises(TypeSafeError, match="API key") as caught:
+        clients(lambda request: pytest.fail("Unexpected request"), api_key=None if source == "env" else key)
+    error = caught.value
+    assert credential not in str(error)
+    assert credential not in repr(error)
+    assert credential not in "".join(traceback.format_exception(type(error), error, error.__traceback__))
 
 
 async def test_empty_env_unset(clients: ClientFactory, monkeypatch: pytest.MonkeyPatch) -> None:

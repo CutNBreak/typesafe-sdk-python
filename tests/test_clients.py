@@ -342,6 +342,7 @@ async def test_error_messages(clients: ClientFactory, body: object, message: str
 @pytest.mark.parametrize(
     "transport_error,sdk_error",
     [
+        (httpx2.LocalProtocolError, TypeSafeAPIConnectionError),
         (httpx2.ConnectError, TypeSafeAPIConnectionError),
         (httpx2.ReadError, TypeSafeAPIConnectionError),
         (httpx2.RemoteProtocolError, TypeSafeAPIConnectionError),
@@ -355,7 +356,10 @@ async def test_transport_errors(clients: ClientFactory, transport_error: type[ht
 
     with pytest.raises(sdk_error) as caught:
         await models(clients(handler), timeout=1.25)
+    assert type(caught.value) is sdk_error
     assert isinstance(caught.value.__cause__, transport_error)
+    assert str(caught.value.__cause__) == "failed"
+    assert caught.value.__context__ is None
     if isinstance(caught.value, TypeSafeAPITimeoutError):
         assert caught.value.timeout == 1.25
 

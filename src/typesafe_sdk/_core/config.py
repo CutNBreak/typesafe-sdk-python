@@ -18,8 +18,19 @@ from typesafe_sdk.constants import (
 )
 
 
-def _resolve_env(value: str | None, env: str, default: str | None = None) -> str | None:
+def _resolve_string(value: str | None, env: str, default: str = "") -> str:
+    """Resolve an explicit string or a stripped environment value, falling back to a default."""
     return value if value is not None else os.environ.get(env, "").strip() or default
+
+
+def resolve_and_validate_api_key(api_key: str | None) -> str:
+    """Resolve an API key from the argument or environment, strip whitespace, and validate it."""
+    key = _resolve_string(api_key, API_KEY_ENV).strip()
+    if not key:
+        raise TypeSafeError(f"No API key was provided. Pass api_key or set the {API_KEY_ENV} environment variable.")
+    if not key.isascii() or not key.isprintable() or " " in key:
+        raise TypeSafeError("API key must contain only printable ASCII characters without whitespace.")
+    return key
 
 
 def resolve_timeout(timeout: float | httpx2.Timeout) -> float | httpx2.Timeout:
@@ -45,17 +56,10 @@ class Config:
         timeout: float | httpx2.Timeout | None,
         default_headers: Mapping[str, str] | None,
     ) -> "Config":
-        key = _resolve_env(api_key, API_KEY_ENV)
-        if key is None:
-            raise TypeSafeError(f"No API key was provided. Pass api_key or set the {API_KEY_ENV} environment variable.")
-        resolved_base_url = _resolve_env(base_url, BASE_URL_ENV, DEFAULT_BASE_URL)
-        resolved_model = _resolve_env(default_model, DEFAULT_MODEL_ENV, DEFAULT_MODEL)
-        assert resolved_base_url is not None, "DEFAULT_BASE_URL default guarantees a value"  # noqa: S101 - narrows the non-None default.
-        assert resolved_model is not None, "DEFAULT_MODEL default guarantees a value"  # noqa: S101 - narrows the non-None default.
         return cls(
-            key,
-            resolved_base_url.rstrip("/"),
-            resolved_model,
+            resolve_and_validate_api_key(api_key),
+            _resolve_string(base_url, BASE_URL_ENV, DEFAULT_BASE_URL).rstrip("/"),
+            _resolve_string(default_model, DEFAULT_MODEL_ENV, DEFAULT_MODEL),
             resolve_timeout(DEFAULT_TIMEOUT if timeout is None else timeout),
             httpx2.Headers(default_headers),
         )

@@ -43,6 +43,8 @@ class TypeSafeClient:
 
         Args:
             api_key: Required API key; may be set via the `TYPESAFE_API_KEY` environment variable.
+                Leading and trailing whitespace is stripped. Empty keys, internal whitespace,
+                control characters, and non-ASCII characters are rejected.
             model: Model name; may be set via the `TYPESAFE_DEFAULT_MODEL` environment variable.
             retry: A `RetryPolicy` controlling retry behavior; see `RetryPolicy` for the available options and their
                 defaults. Pass `RetryPolicy(max_retries=0)` to disable retries.
@@ -54,7 +56,7 @@ class TypeSafeClient:
             base_url: API root; may be set via the `TYPESAFE_BASE_URL` environment variable.
 
         Raises:
-            TypeSafeError: The API key is missing or the timeout is invalid.
+            TypeSafeError: The API key is missing or invalid, or the timeout is invalid.
             ValueError: Both `transport` and `http_client` are supplied.
 
         Examples:

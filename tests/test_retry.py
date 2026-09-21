@@ -175,7 +175,7 @@ async def test_default_retry_statuses(clients: ClientFactory, status: int, attem
     assert [request.headers.get("x-typesafe-retry-count") for request in requests] == [None, "1", "2"][:attempts]
 
 
-@pytest.mark.parametrize("kind", [httpx2.ConnectError, httpx2.ReadTimeout, httpx2.ReadError])
+@pytest.mark.parametrize("kind", [httpx2.ConnectError, httpx2.ReadTimeout, httpx2.ReadError, httpx2.LocalProtocolError])
 async def test_connection_retry_recovers(clients: ClientFactory, kind: type[httpx2.RequestError]) -> None:
     attempts = 0
     delays: list[float] = []
@@ -453,6 +453,7 @@ async def test_exhausted_transport_retry(clients: ClientFactory, kind: type[http
         assert caught.value.timeout is timeout
     else:
         assert type(caught.value) is TypeSafeAPIConnectionError
+        assert str(caught.value) == "Connection error: attempt 3"
 
 
 async def test_exhausted_retry_preserves_final_http_error(clients: ClientFactory) -> None:

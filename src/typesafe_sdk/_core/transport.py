@@ -28,7 +28,7 @@ from typesafe_sdk._core.constants import (
 )
 from typesafe_sdk._core.errors import TypeSafeAPIConnectionError, TypeSafeAPITimeoutError, TypeSafeError
 from typesafe_sdk._core.json import serialize
-from typesafe_sdk._core.logging import logger
+from typesafe_sdk._core.logging import logger, redact_exception
 from typesafe_sdk._core.retry import RetryPolicy, build_tenacity, build_tenacity_async
 from typesafe_sdk._core.schemas.base import ResponseT, parse_response
 from typesafe_sdk._version import __version__
@@ -78,9 +78,17 @@ class RequestState(Generic[ResponseT]):
             yield headers
         except httpx2.RequestError as error:
             logger.info("%s %s <- %s", request.method, request.url, type(error).__name__)
+            safe_error = redact_exception(error, headers)
+            sdk_error: TypeSafeAPIConnectionError
             if isinstance(error, httpx2.TimeoutException):
-                raise TypeSafeAPITimeoutError(request.timeout) from error
-            raise TypeSafeAPIConnectionError(f"Connection error: {error}") from error
+                sdk_error = TypeSafeAPITimeoutError(request.timeout)
+            else:
+                sdk_error = TypeSafeAPIConnectionError(f"Connection error: {safe_error}")
+            try:
+                raise sdk_error from safe_error
+            finally:
+                # Raising inside this handler implicitly attaches the unredacted original.
+                sdk_error.__context__ = None
 
     def parse(self, response: httpx2.Response) -> ResponseT:
         request = self._request

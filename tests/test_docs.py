@@ -8,7 +8,7 @@ import pytest
 from sybil import Document
 from sybil.document import PythonDocStringDocument
 from sybil.evaluators.python import PythonEvaluator
-from sybil.parsers.markdown import CodeBlockParser, PythonCodeBlockParser
+from sybil.parsers.markdown import CodeBlockParser, PythonCodeBlockParser, SkipParser
 
 import typesafe_sdk
 
@@ -17,9 +17,9 @@ MARKDOWN_FILES = [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
 SOURCE_FILES = sorted((ROOT / "src" / "typesafe_sdk").rglob("*.py"))
 
 
-def code_parsers() -> tuple[PythonCodeBlockParser, CodeBlockParser]:
-    """Parse both ```python and ```py fenced blocks with the same Python evaluator."""
-    return PythonCodeBlockParser(), CodeBlockParser("py", PythonEvaluator())
+def code_parsers() -> tuple[PythonCodeBlockParser, CodeBlockParser, SkipParser]:
+    """Parse Python examples, allowing explicit skips for illustrative or external API calls."""
+    return PythonCodeBlockParser(), CodeBlockParser("py", PythonEvaluator()), SkipParser()
 
 
 @pytest.mark.integration

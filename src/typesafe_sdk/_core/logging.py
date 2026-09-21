@@ -5,8 +5,11 @@ optional convenience: set ``TYPESAFE_LOG_LEVEL`` (``debug``/``info``/...) and th
 once at import. Otherwise configure the ``typesafe_sdk`` logger through standard logging as usual.
 """
 
+import json
 import logging
 import os
+import re
+from collections.abc import Mapping
 
 from typing_extensions import override
 
@@ -33,6 +36,45 @@ def _is_secret(name: str) -> bool:
 
 def _redact(headers: dict[str, str]) -> dict[str, str]:
     return {name: "***" if _is_secret(name) else value for name, value in headers.items()}
+
+
+def redact_exception(error: BaseException, headers: Mapping[str, str]) -> BaseException:
+    """Copy exception messages and chains with credentials masked, without requests or traceback frames."""
+    credentials = {value for name, value in headers.items() if _is_secret(name) and value}
+    for name, value in headers.items():
+        if name.lower() in {"authorization", "proxy-authorization"}:
+            match value.split(maxsplit=1):
+                case [_, credential]:
+                    credentials.add(credential)
+    # Errors may contain raw tokens, repr-style header bytes, or JSON-escaped values.
+    variants = {variant for value in credentials for variant in (value, repr(value)[1:-1], repr(value.encode())[2:-1], json.dumps(value)[1:-1])}
+    pattern = re.compile("|".join(re.escape(value) for value in sorted(variants, key=len, reverse=True))) if variants else None
+
+    def redact(message: str) -> str:
+        return pattern.sub("***", message) if pattern is not None else message
+
+    copies: dict[int, BaseException] = {}
+
+    def copy_exception(original: BaseException) -> BaseException:
+        if id(original) in copies:
+            return copies[id(original)]
+        message = redact(str(original))
+        try:
+            result = type(original)(message)
+        except Exception:  # noqa: BLE001 - Custom exception constructors may require more than a message.
+            result = Exception(f"{type(original).__name__}: {message}")
+        copies[id(original)] = result
+        if original.__cause__ is not None:
+            result.__cause__ = copy_exception(original.__cause__)
+        if original.__context__ is not None:
+            result.__context__ = copy_exception(original.__context__)
+        result.__suppress_context__ = original.__suppress_context__
+        notes = getattr(original, "__notes__", None)
+        if notes is not None:
+            result.__dict__["__notes__"] = [redact(str(note)) for note in notes]
+        return result
+
+    return copy_exception(error)
 
 
 class SensitiveHeadersFilter(logging.Filter):
